@@ -1,14 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase, uploadFile } from '../../lib/supabase';
-import { Mic, Square, Play, Pause, Upload, Loader2, User, ChevronRight, ChevronLeft, Sparkles, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Upload, Loader2, User, ChevronRight, ChevronLeft, Sparkles, AlertCircle, ArrowLeft, FileAudio } from 'lucide-react';
 
 // Hardcoded patient ID - matches the patient record in database
 const PATIENT_ID = '0c02b145-5b4d-456a-bfe3-50d442adf57f';
 
 const FamilyRegister = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1); // 1: Basic Info, 2: Voice Recording
+  const [step, setStep] = useState(1); // 1: Basic Info, 2: Voice Upload
   
   // Form data
   const [name, setName] = useState('');
@@ -19,22 +19,12 @@ const FamilyRegister = () => {
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState(null);
   
-  // Voice recording
-  const [isRecording, setIsRecording] = useState(false);
-  const [audioBlob, setAudioBlob] = useState(null);
-  const [audioUrl, setAudioUrl] = useState(null);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  // Voice upload
+  const [voiceFile, setVoiceFile] = useState(null);
   
   // State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  // Refs
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const timerRef = useRef(null);
-  const audioPlayerRef = useRef(null);
 
   // Handle profile photo
   const handlePhotoChange = (e) => {
@@ -45,61 +35,11 @@ const FamilyRegister = () => {
     }
   };
 
-  // Voice recording functions
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        setAudioBlob(audioBlob);
-        setAudioUrl(URL.createObjectURL(audioBlob));
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-
-      // Start timer
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => {
-          if (prev >= 30) {
-            stopRecording();
-            return 30;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } catch (err) {
-      console.error('Error starting recording:', err);
-      setError('Could not access microphone. Please allow microphone access.');
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(timerRef.current);
-    }
-  };
-
-  const togglePlayPause = () => {
-    if (audioPlayerRef.current) {
-      if (isPlaying) {
-        audioPlayerRef.current.pause();
-      } else {
-        audioPlayerRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
+  // Handle voice file
+  const handleVoiceChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setVoiceFile(file);
     }
   };
 
@@ -115,8 +55,8 @@ const FamilyRegister = () => {
   };
 
   const validateStep2 = () => {
-    if (!audioBlob) return 'Please record your voice sample';
-    if (recordingTime < 10) return 'Recording must be at least 10 seconds';
+    if (!voiceFile) return 'Please upload a voice sample';
+    if (!voiceFile.name.endsWith('.wav')) return 'Only WAV format is supported';
     return null;
   };
 
@@ -154,7 +94,7 @@ const FamilyRegister = () => {
       if (authError) throw authError;
       const userId = authData.user.id;
 
-      // Step 2: Upload profile photo (if provided)
+      // Step 2: Upload profile photo if provided
       let profilePhotoUrl = null;
       if (profilePhoto) {
         const photoFileName = `${userId}-${Date.now()}-${profilePhoto.name}`;
@@ -163,31 +103,53 @@ const FamilyRegister = () => {
         profilePhotoUrl = url;
       }
 
-      // Step 3: Upload voice sample
+      // Step 3: Register family member in Django backend
+      const formData = new FormData();
+      formData.append('user_id', userId);
+      formData.append('patient_id', PATIENT_ID);
+      formData.append('name', name.trim());
+      formData.append('email', email.trim());
+      formData.append('relationship', relationship);
+      if (profilePhotoUrl) {
+        formData.append('profile_photo_url', profilePhotoUrl);
+      }
+
+      const registerRes = await fetch('http://127.0.0.1:8000/api/register/', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const registerData = await registerRes.json();
+      if (!registerRes.ok) {
+        throw new Error(registerData.error || 'Registration failed');
+      }
+      
+      const familyMemberId = registerData.family_member_id;
+
+      // Step 4: Upload voice sample
       const voiceFileName = `${userId}-${Date.now()}.wav`;
-      const { url: voiceSampleUrl, error: voiceError } = await uploadFile(
+      const { url: voiceSampleUrl, error: voiceUploadError } = await uploadFile(
         'voice-samples',
         voiceFileName,
-        audioBlob,
+        voiceFile,
         false
       );
-      if (voiceError) throw voiceError;
+      if (voiceUploadError) throw voiceUploadError;
 
-      // Step 4: Create family member record
-      const { error: memberError } = await supabase
-        .from('family_members')
-        .insert({
-          user_id: userId,
-          name: name.trim(),
-          email: email.trim(),
-          relationship,
-          patient_id: PATIENT_ID,
-          profile_photo_url: profilePhotoUrl,
-          voice_sample_url: voiceSampleUrl,
-          voice_clone_status: 'pending'
-        });
+      // Step 5: Update voice in Django backend
+      const voiceFormData = new FormData();
+      voiceFormData.append('family_member_id', familyMemberId);
+      voiceFormData.append('voice_sample_url', voiceSampleUrl);
 
-      if (memberError) throw memberError;
+      const voiceRes = await fetch('http://127.0.0.1:8000/api/upload-voice/', {
+        method: 'POST',
+        body: voiceFormData
+      });
+      
+      const voiceData = await voiceRes.json();
+      if (!voiceRes.ok) {
+        throw new Error(voiceData.error || 'Voice upload failed');
+      }
 
       // Success - navigate to dashboard
       navigate('/dashboard');
@@ -228,9 +190,6 @@ const FamilyRegister = () => {
 
       {/* Registration Card */}
       <div className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl max-w-md w-full p-8 md:p-10 relative z-10 animate-slide-up">
-        {/* Decorative gradient border effect */}
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity blur"></div>
-        
         {/* Logo/Title */}
         <div className="text-center mb-8 animate-fade-in">
           <div className="flex items-center justify-center gap-2 mb-3">
@@ -274,7 +233,7 @@ const FamilyRegister = () => {
 
         {/* Step 1: Basic Information */}
         {step === 1 && (
-          <form className="space-y-6">
+          <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleNextStep(); }}>
             {/* Name */}
             <div className="transform transition-all duration-300 hover:scale-[1.02]">
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -349,6 +308,7 @@ const FamilyRegister = () => {
                 <option value="">Select relationship</option>
                 <option value="Daughter">Daughter</option>
                 <option value="Son">Son</option>
+                <option value="Son">Son</option>
                 <option value="Wife">Wife</option>
                 <option value="Husband">Husband</option>
                 <option value="Granddaughter">Granddaughter</option>
@@ -393,11 +353,10 @@ const FamilyRegister = () => {
 
             {/* Next button */}
             <button
-              type="button"
-              onClick={handleNextStep}
+              type="submit"
               className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:via-blue-700 hover:to-indigo-700 transition-all duration-300 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
             >
-              Next: Voice Recording
+              Next: Voice Upload
               <ChevronRight className="w-5 h-5" />
             </button>
 
@@ -416,94 +375,52 @@ const FamilyRegister = () => {
           </form>
         )}
 
-        {/* Step 2: Voice Recording */}
+        {/* Step 2: Voice Upload */}
         {step === 2 && (
           <div className="space-y-6">
             <div className="text-center animate-fade-in">
               <h3 className="text-xl font-bold text-gray-900 mb-2">
-                Record Your Voice
+                Upload Voice Sample
               </h3>
               <p className="text-gray-600 font-medium">
-                Record a 30-second introduction so we can clone your voice for audio memories
+                Upload a 30+ second audio file (WAV format) for voice cloning
               </p>
             </div>
 
-            {/* Recording interface */}
+            {/* File upload interface */}
             <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-2xl p-8 space-y-6 border-2 border-blue-100 shadow-inner">
-              {/* Timer */}
-              <div className="text-center">
-                <div className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-                  {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+              <label className="flex flex-col items-center gap-4 cursor-pointer group">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center group-hover:from-blue-200 group-hover:to-purple-200 transition-all duration-300 transform group-hover:scale-110">
+                  {voiceFile ? (
+                    <FileAudio className="w-12 h-12 text-green-600" />
+                  ) : (
+                    <Upload className="w-12 h-12 text-blue-500 group-hover:text-purple-500 transition-colors" />
+                  )}
                 </div>
-                <div className="text-sm font-semibold text-gray-600">
-                  {isRecording ? 'Recording...' : audioBlob ? 'Recording complete' : 'Ready to record'}
+                <div className="text-center">
+                  <span className="text-lg font-semibold text-gray-700 block mb-1">
+                    {voiceFile ? voiceFile.name : 'Click to upload voice sample'}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    {voiceFile ? `${(voiceFile.size / 1024 / 1024).toFixed(2)} MB` : 'WAV format only'}
+                  </span>
                 </div>
-              </div>
+                <input
+                  type="file"
+                  accept=".wav,audio/wav"
+                  onChange={handleVoiceChange}
+                  className="hidden"
+                />
+              </label>
 
-              {/* Record button */}
-              {!audioBlob && (
+              {voiceFile && (
                 <button
                   type="button"
-                  onClick={isRecording ? stopRecording : startRecording}
-                  className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-semibold text-lg transition-all duration-300 transform hover:scale-105 ${
-                    isRecording
-                      ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl'
-                      : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg hover:shadow-xl'
-                  }`}
+                  onClick={() => setVoiceFile(null)}
+                  className="w-full px-4 py-2 border-2 border-red-200 text-red-600 rounded-xl hover:bg-red-50 font-medium transition-all duration-300"
                 >
-                  {isRecording ? (
-                    <>
-                      <Square className="w-6 h-6" />
-                      Stop Recording
-                    </>
-                  ) : (
-                    <>
-                      <Mic className="w-6 h-6" />
-                      Start Recording
-                    </>
-                  )}
+                  Remove File
                 </button>
-              )}
-
-              {/* Audio player */}
-              {audioBlob && (
-                <div className="space-y-4 animate-fade-in">
-                  <audio
-                    ref={audioPlayerRef}
-                    src={audioUrl}
-                    onEnded={() => setIsPlaying(false)}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={togglePlayPause}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
-                  >
-                    {isPlaying ? (
-                      <>
-                        <Pause className="w-6 h-6" />
-                        Pause
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-6 h-6" />
-                        Play Recording
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAudioBlob(null);
-                      setAudioUrl(null);
-                      setRecordingTime(0);
-                      setIsPlaying(false);
-                    }}
-                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-red-300 hover:text-red-600 font-semibold transition-all duration-300 transform hover:scale-105"
-                  >
-                    Record Again
-                  </button>
-                </div>
               )}
             </div>
 
@@ -520,7 +437,7 @@ const FamilyRegister = () => {
               <button
                 type="button"
                 onClick={handleRegister}
-                disabled={loading || !audioBlob}
+                disabled={loading || !voiceFile}
                 className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-purple-500 via-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-600 hover:via-purple-700 hover:to-pink-700 transition-all duration-300 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
                 {loading ? (

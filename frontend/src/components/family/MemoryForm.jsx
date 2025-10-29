@@ -1,22 +1,21 @@
 // src/components/family/MemoryForm.jsx
 import React, { useState, useEffect } from 'react';
-import { supabase, uploadFile } from '../../lib/supabase';
-import { X, Upload, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
+import { X, Upload, Loader2, Trash2, AlertCircle, Volume2 } from 'lucide-react';
+
+const API_BASE = 'http://127.0.0.1:8000/api';
 
 const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess }) => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [photos, setPhotos] = useState([]);
-  const [existingPhotos, setExistingPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
 
-  // Populate form when editing
   useEffect(() => {
     if (editingMemory) {
       setTitle(editingMemory.title || '');
       setContent(editingMemory.content || '');
-      setExistingPhotos(editingMemory.photos || []);
       setPhotos([]);
     } else {
       resetForm();
@@ -27,14 +26,13 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
     setTitle('');
     setContent('');
     setPhotos([]);
-    setExistingPhotos([]);
     setError('');
+    setStatusMessage('');
   };
 
-  // Handle photo selection
   const handlePhotoChange = (e) => {
     const files = Array.from(e.target.files);
-    if (files.length + photos.length + existingPhotos.length > 5) {
+    if (files.length + photos.length > 5) {
       setError('Maximum 5 photos allowed');
       return;
     }
@@ -42,17 +40,10 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
     setError('');
   };
 
-  // Remove new photo before upload
-  const removeNewPhoto = (index) => {
+  const removePhoto = (index) => {
     setPhotos(photos.filter((_, i) => i !== index));
   };
 
-  // Remove existing photo
-  const removeExistingPhoto = (photoId) => {
-    setExistingPhotos(existingPhotos.filter(p => p.id !== photoId));
-  };
-
-  // Submit form
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -63,79 +54,45 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
 
     setUploading(true);
     setError('');
+    setStatusMessage('Creating memory...');
 
     try {
-      let memoryId = editingMemory?.id;
+      const formData = new FormData();
+      formData.append('family_member_id', familyMemberId);
+      formData.append('title', title.trim());
+      formData.append('content', content.trim());
+      
+      // Append photos
+      photos.forEach((photo) => {
+        formData.append('photos', photo);
+      });
 
-      // Create or update memory
-      if (editingMemory) {
-        // Update existing memory
-        const { error: updateError } = await supabase
-          .from('memories')
-          .update({
-            title: title.trim(),
-            content: content.trim(),
-          })
-          .eq('id', editingMemory.id);
+      setStatusMessage('Uploading photos and generating audio...');
 
-        if (updateError) throw updateError;
+      const response = await fetch(`${API_BASE}/create-memory/`, {
+        method: 'POST',
+        body: formData,
+      });
 
-        // Delete removed existing photos from database
-        const removedPhotoIds = editingMemory.photos
-          ?.filter(p => !existingPhotos.find(ep => ep.id === p.id))
-          .map(p => p.id) || [];
+      const data = await response.json();
 
-        if (removedPhotoIds.length > 0) {
-          await supabase
-            .from('memory_photos')
-            .delete()
-            .in('id', removedPhotoIds);
-        }
-      } else {
-        // Create new memory
-        const { data: memoryData, error: memoryError } = await supabase
-          .from('memories')
-          .insert({
-            family_member_id: familyMemberId,
-            title: title.trim(),
-            content: content.trim(),
-          })
-          .select()
-          .single();
-
-        if (memoryError) throw memoryError;
-        memoryId = memoryData.id;
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create memory');
       }
 
-      // Upload new photos
-      if (photos.length > 0) {
-        const photoUploadPromises = photos.map(async (photo) => {
-          const fileName = `${memoryId}/${Date.now()}-${photo.name}`;
-          const { url, error: uploadError } = await uploadFile('memory-photos', fileName, photo);
-          
-          if (uploadError) throw uploadError;
-
-          // Save photo URL to database
-          const { error: insertError } = await supabase
-            .from('memory_photos')
-            .insert({
-              memory_id: memoryId,
-              photo_url: url,
-            });
-
-          if (insertError) throw insertError;
-        });
-
-        await Promise.all(photoUploadPromises);
-      }
-
+      setStatusMessage('Memory created successfully!');
+      
       // Success
-      onSuccess();
-      onClose();
-      resetForm();
+      setTimeout(() => {
+        onSuccess();
+        onClose();
+        resetForm();
+      }, 1000);
+
     } catch (err) {
-      console.error('Error saving memory:', err);
-      setError('Failed to save memory. Please try again.');
+      console.error('Error creating memory:', err);
+      setError(err.message || 'Failed to save memory. Please try again.');
+      setStatusMessage('');
     } finally {
       setUploading(false);
     }
@@ -144,16 +101,16 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl animate-slide-up">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-2xl font-semibold text-gray-800">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-purple-50">
+          <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             {editingMemory ? 'Edit Memory' : 'Create New Memory'}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
+            className="text-gray-500 hover:text-gray-700 hover:bg-white rounded-lg p-2 transition-all"
             disabled={uploading}
           >
             <X className="w-6 h-6" />
@@ -161,16 +118,26 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Error message */}
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-              {error}
+            <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-3 animate-shake">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <p className="text-red-600 text-sm font-medium">{error}</p>
+            </div>
+          )}
+
+          {/* Status message */}
+          {statusMessage && (
+            <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+              <p className="text-blue-600 text-sm font-medium">{statusMessage}</p>
             </div>
           )}
 
           {/* Title */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Memory Title *
             </label>
             <input
@@ -178,71 +145,55 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Beach trip 2019"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white"
               disabled={uploading}
               required
             />
           </div>
 
           {/* Content */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div>
+            <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
               Memory Description *
+              <span className="text-xs text-gray-500 font-normal flex items-center gap-1">
+                <Volume2 className="w-3 h-3" />
+                (Will be converted to audio)
+              </span>
             </label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Describe this memory in detail..."
-              rows="6"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              placeholder="Describe this memory in detail... This will be narrated in your voice!"
+              rows="8"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white resize-none"
               disabled={uploading}
               required
             />
+            <p className="text-xs text-gray-500 mt-2">
+              💡 Tip: Write naturally as if you're telling a story. The audio will be generated using your voice!
+            </p>
           </div>
 
           {/* Photos */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Photos (Optional, max 5)
             </label>
 
-            {/* Existing photos */}
-            {existingPhotos.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                {existingPhotos.map((photo) => (
-                  <div key={photo.id} className="relative group">
-                    <img
-                      src={photo.photo_url}
-                      alt="Memory"
-                      className="w-full h-24 object-cover rounded-lg"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeExistingPhoto(photo.id)}
-                      className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                      disabled={uploading}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* New photos preview */}
+            {/* Photos preview */}
             {photos.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="grid grid-cols-3 gap-3 mb-3">
                 {photos.map((photo, index) => (
                   <div key={index} className="relative group">
                     <img
                       src={URL.createObjectURL(photo)}
                       alt="Preview"
-                      className="w-full h-24 object-cover rounded-lg"
+                      className="w-full h-28 object-cover rounded-xl border-2 border-gray-200"
                     />
                     <button
                       type="button"
-                      onClick={() => removeNewPhoto(index)}
-                      className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => removePhoto(index)}
+                      className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-red-600 shadow-lg"
                       disabled={uploading}
                     >
                       <Trash2 className="w-4 h-4" />
@@ -253,10 +204,12 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
             )}
 
             {/* Upload button */}
-            {(photos.length + existingPhotos.length) < 5 && (
-              <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors">
-                <Upload className="w-5 h-5 text-gray-500" />
-                <span className="text-sm text-gray-600">Upload Photos</span>
+            {photos.length < 5 && (
+              <label className="flex items-center justify-center gap-2 px-4 py-4 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all group">
+                <Upload className="w-5 h-5 text-gray-500 group-hover:text-blue-500 transition-colors" />
+                <span className="text-sm font-medium text-gray-600 group-hover:text-blue-600">
+                  {photos.length > 0 ? 'Add More Photos' : 'Upload Photos'}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
@@ -270,11 +223,11 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+              className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-all"
               disabled={uploading}
             >
               Cancel
@@ -282,20 +235,45 @@ const MemoryForm = ({ isOpen, onClose, familyMemberId, editingMemory, onSuccess 
             <button
               type="submit"
               disabled={uploading}
-              className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 font-semibold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {uploading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Saving...
+                  Processing...
                 </>
               ) : (
-                editingMemory ? 'Update Memory' : 'Create Memory'
+                'Create Memory'
               )}
             </button>
           </div>
         </form>
       </div>
+
+      <style jsx>{`
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slide-up {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+        .animate-fade-in { animation: fade-in 0.2s ease-out; }
+        .animate-slide-up { animation: slide-up 0.3s ease-out; }
+        .animate-shake { animation: shake 0.4s ease-in-out; }
+      `}</style>
     </div>
   );
 };
