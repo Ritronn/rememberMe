@@ -15,4 +15,5 @@ urlpatterns = [
     # Get data
     path('family-members/<uuid:patient_id>/', views.get_family_members, name='get_family_members'),
     path('memories/<uuid:family_member_id>/', views.get_memories, name='get_memories'),
+    path('identify-photo/', views.identify_from_photo, name='identify_from_photo'),
 ]
