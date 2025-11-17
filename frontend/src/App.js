@@ -13,6 +13,7 @@ import FamilyRegister from './pages/family/FamilyRegister';
 import PatientLogin from './pages/patient/PatientLogin';
 import PatientRegister from './pages/patient/PatientRegister'; // ADD THIS
 import PatientDashboard from './pages/patient/PatientDashboard';
+import FamilyMomentntsFeed from './pages/patient/FamilyMomentsFeed'
 
 function App() {
   return (
@@ -25,7 +26,7 @@ function App() {
         <Route path="/family/login" element={<FamilyLogin />} />
         <Route path="/family/register" element={<FamilyRegister />} />
         <Route path="/family/dashboard" element={<FamilyDashboard />} />
-        
+        <Route path="/patient/family-moments" element={<FamilyMomentntsFeed/>}/>
         {/* Patient routes */}
         <Route path="/patient/login" element={<PatientLogin />} />
         <Route path="/patient/register" element={<PatientRegister />} /> {/* ADD THIS */}

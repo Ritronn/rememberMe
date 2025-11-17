@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import *
-from .services.supabase_client import supabase, upload_file
+from .services.supabase_client import supabase, upload_file, delete_file
 from .services.voice_service import generate_audio_from_text
 from .services.gemini_service import query_patient_memory
 import uuid
@@ -401,3 +401,121 @@ def identify_from_photo(request):
             'confidence': 'none',
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@api_view(['POST'])
+def upload_video(request):
+    """Upload family video with thumbnail"""
+    serializer = VideoUploadSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    data = serializer.validated_data
+    family_member_id = str(data['family_member_id'])
+    
+    try:
+        # Get family member's patient_id
+        member = supabase.table('family_members').select('patient_id').eq('id', family_member_id).single().execute()
+        
+        if not member.data:
+            return Response({'error': 'Family member not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        patient_id = member.data['patient_id']
+        
+        # Generate unique video ID
+        video_id = str(uuid.uuid4())
+        
+        # Upload video
+        video_file = request.FILES['video']
+        video_path = f"videos/{patient_id}/{video_id}_{video_file.name}"
+        video_result = upload_file('family-videos', video_path, video_file.read())
+        
+        if video_result['error']:
+            raise Exception(f"Video upload failed: {video_result['error']}")
+        
+        # Upload thumbnail if provided
+        thumbnail_url = None
+        if 'thumbnail' in request.FILES:
+            thumbnail_file = request.FILES['thumbnail']
+            thumbnail_path = f"thumbnails/{patient_id}/{video_id}_thumb.jpg"
+            thumbnail_result = upload_file('family-videos', thumbnail_path, thumbnail_file.read())
+            
+            if not thumbnail_result['error']:
+                thumbnail_url = thumbnail_result['url']
+        
+        # Calculate file size in MB
+        file_size_mb = video_file.size / (1024 * 1024)
+        
+        # Insert into database
+        video_record = supabase.table('family_videos').insert({
+            'id': video_id,
+            'family_member_id': family_member_id,
+            'patient_id': patient_id,
+            'title': data['title'],
+            'description': data.get('description', ''),
+            'video_url': video_result['url'],
+            'thumbnail_url': thumbnail_url,
+            'file_size_mb': round(file_size_mb, 2)
+        }).execute()
+        
+        return Response({
+            'video_id': video_id,
+            'video_url': video_result['url'],
+            'thumbnail_url': thumbnail_url,
+            'message': 'Video uploaded successfully'
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        print(f"Video upload error: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_patient_videos(request, patient_id):
+    """Get all videos for a patient (feed view)"""
+    try:
+        # Fetch videos with family member info
+        videos = supabase.table('family_videos').select('''
+            *,
+            family_members (
+                id,
+                name,
+                relationship,
+                profile_photo_url
+            )
+        ''').eq('patient_id', str(patient_id)).order('created_at', desc=True).execute()
+        
+        return Response(videos.data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"Get videos error: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+def delete_video(request, video_id):
+    """Delete a video"""
+    try:
+        # Get video info first
+        video = supabase.table('family_videos').select('video_url, thumbnail_url').eq('id', str(video_id)).single().execute()
+        
+        if not video.data:
+            return Response({'error': 'Video not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Extract paths from URLs
+        video_path = video.data['video_url'].split('family-videos/')[-1]
+        
+        # Delete from storage
+        delete_file('family-videos', video_path)
+        
+        if video.data['thumbnail_url']:
+            thumbnail_path = video.data['thumbnail_url'].split('family-videos/')[-1]
+            delete_file('family-videos', thumbnail_path)
+        
+        # Delete from database
+        supabase.table('family_videos').delete().eq('id', str(video_id)).execute()
+        
+        return Response({'message': 'Video deleted successfully'}, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"Delete video error: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

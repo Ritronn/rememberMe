@@ -24,3 +24,13 @@ class MemoryCreateSerializer(serializers.Serializer):
 class PatientQuerySerializer(serializers.Serializer):
     patient_id = serializers.UUIDField()
     query = serializers.CharField()
+
+class VideoUploadSerializer(serializers.Serializer):
+    family_member_id = serializers.UUIDField()
+    title = serializers.CharField(max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True)
+    video = serializers.FileField()
+    thumbnail = serializers.ImageField(required=False)
+
+class VideoListSerializer(serializers.Serializer):
+    patient_id = serializers.UUIDField()

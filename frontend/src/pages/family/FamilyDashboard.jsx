@@ -4,17 +4,18 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, getCurrentUser, signOut } from '../../lib/supabase';
 import MemoryList from '../../components/family/MemoryList';
 import MemoryForm from '../../components/family/MemoryForm';
-import { Plus, LogOut, User, Mic, CheckCircle, Clock, XCircle, Loader2, Sparkles } from 'lucide-react';
+import VideoUploadForm from '../../components/family/VideoUploadForm';
+import { Plus, LogOut, User, Mic, CheckCircle, Clock, XCircle, Loader2, Sparkles, Video } from 'lucide-react';
 
 const FamilyDashboard = () => {
   const navigate = useNavigate();
   const [familyMember, setFamilyMember] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isVideoFormOpen, setIsVideoFormOpen] = useState(false);
   const [editingMemory, setEditingMemory] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Fetch family member data
   useEffect(() => {
     fetchFamilyMember();
   }, []);
@@ -22,8 +23,6 @@ const FamilyDashboard = () => {
   const fetchFamilyMember = async () => {
     try {
       setLoading(true);
-      
-      // Get current user from Supabase Auth
       const { user, error: userError } = await getCurrentUser();
       
       if (userError || !user) {
@@ -31,7 +30,6 @@ const FamilyDashboard = () => {
         return;
       }
 
-      // Fetch family member record
       const { data, error } = await supabase
         .from('family_members')
         .select(`
@@ -42,7 +40,6 @@ const FamilyDashboard = () => {
         .single();
 
       if (error) throw error;
-
       setFamilyMember(data);
     } catch (err) {
       console.error('Error fetching family member:', err);
@@ -52,30 +49,25 @@ const FamilyDashboard = () => {
     }
   };
 
-  // Handle logout
   const handleLogout = async () => {
     await signOut();
     navigate('/login');
   };
 
-  // Handle create memory
   const handleCreateMemory = () => {
     setEditingMemory(null);
     setIsFormOpen(true);
   };
 
-  // Handle edit memory
   const handleEditMemory = (memory) => {
     setEditingMemory(memory);
     setIsFormOpen(true);
   };
 
-  // Handle form success
   const handleFormSuccess = () => {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  // Voice status component
   const VoiceStatus = ({ status }) => {
     const statusConfig = {
       pending: {
@@ -128,7 +120,6 @@ const FamilyDashboard = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 relative overflow-hidden">
-        {/* Subtle animated background blobs */}
         <div className="absolute top-0 left-0 w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
         <div className="absolute top-0 right-0 w-96 h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
         
@@ -158,7 +149,6 @@ const FamilyDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 relative overflow-hidden">
-      {/* Subtle animated background blobs */}
       <div className="absolute top-0 left-0 w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
       <div className="absolute top-1/3 right-0 w-96 h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
       <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
@@ -167,7 +157,6 @@ const FamilyDashboard = () => {
       <header className="bg-white/80 backdrop-blur-sm shadow-md border-b border-white/20 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center justify-between">
-            {/* Logo/Title */}
             <div className="flex items-center gap-2">
               <Sparkles className="w-6 h-6 text-purple-600" />
               <div>
@@ -178,7 +167,6 @@ const FamilyDashboard = () => {
               </div>
             </div>
 
-            {/* User info and logout */}
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
                 <p className="text-xs font-semibold text-gray-900">{familyMember.name}</p>
@@ -224,13 +212,22 @@ const FamilyDashboard = () => {
               Create and manage memories for <span className="text-purple-600 font-semibold">{familyMember.patient?.name}</span>
             </p>
           </div>
-          <button
-            onClick={handleCreateMemory}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-300 font-semibold shadow-md"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Memory</span>
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsVideoFormOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-600 text-white text-sm rounded-lg hover:from-purple-600 hover:to-pink-700 transition-all duration-300 font-semibold shadow-md"
+            >
+              <Video className="w-4 h-4" />
+              <span>Upload Video</span>
+            </button>
+            <button
+              onClick={handleCreateMemory}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-300 font-semibold shadow-md"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Memory</span>
+            </button>
+          </div>
         </div>
 
         {/* Memory List */}
@@ -247,6 +244,14 @@ const FamilyDashboard = () => {
         onClose={() => setIsFormOpen(false)}
         familyMemberId={familyMember.id}
         editingMemory={editingMemory}
+        onSuccess={handleFormSuccess}
+      />
+
+      {/* Video Upload Modal */}
+      <VideoUploadForm
+        isOpen={isVideoFormOpen}
+        onClose={() => setIsVideoFormOpen(false)}
+        familyMemberId={familyMember.id}
         onSuccess={handleFormSuccess}
       />
 
