@@ -1,0 +1,6 @@
+INFO 2025-11-23 17:21:38,962 autoreload 6656 23588 Watching for file changes with StatReloader
+INFO 2025-11-23 17:23:17,785 autoreload 6656 23588 D:\WORK\PROJECTS\rememberMe_remaster\backend\settings.py changed, reloading.
+INFO 2025-11-23 17:23:35,276 autoreload 20748 23744 Watching for file changes with StatReloader
+INFO 2025-11-23 17:23:44,019 autoreload 20748 23744 D:\WORK\PROJECTS\rememberMe_remaster\backend\settings.py changed, reloading.
+INFO 2025-11-23 17:23:44,695 autoreload 19168 21176 Watching for file changes with StatReloader
+INFO 2025-11-23 17:23:57,698 autoreload 19168 21176 D:\WORK\PROJECTS\rememberMe_remaster\backend\settings.py changed, reloading.
