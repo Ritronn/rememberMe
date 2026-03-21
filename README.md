@@ -13,7 +13,7 @@ RememberMe bridges the memory gap for Alzheimer's patients by combining AI voice
 - 🗣️ **Natural Language Queries**: Ask questions in plain English - "Who is my daughter?" or "What did I do with Sarah?"
 - 🌐 **Multilingual Memory Display**: Memories shown in English, Hindi, and Marathi text
 - 📹 **Video Memory Feed**: Upload and share family video moments with thumbnails
-- 📸 **Photo Albums**: Attach up to 5 photos per memory with automatic gallery view
+- 📸 **Photo Albums**: Attach up to 5 photos per memory
 - 🔊 **Audio Playback**: Listen to memories in cloned family voices
 - 👥 **Dual Portal System**: Separate interfaces for family members and patients
 
