@@ -142,14 +142,11 @@ VITE_API_BASE=http://localhost:8000/api
 ```bash
 npm start
 ```
-
-
 ### Access the App
 
 - **Family Portal**: http://localhost:5173/login
 - **Patient Portal**: http://localhost:5173/patient/login
 - **Backend API**: http://localhost:8000/api
-
 ---
 
 **Made with ❤️ for Alzheimer's patients and their families**
